@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Interactive Particle Disturbance</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: #0a0a0a;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            touch-action: none;
+        }
+
+        #canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            cursor: crosshair;
+        }
+
+        #header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            color: #ffffff;
+            text-align: center;
+            background: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 100%);
+            padding: 30px 20px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        #header p {
+            font-size: 18px;
+            font-weight: 400;
+            letter-spacing: 0.5px;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ffffff;
+            font-size: 20px;
+            text-align: center;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #ffffff;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            #header h1 {
+                font-size: 18px;
+            }
+
+            #header p {
+                font-size: 14px;
+            }
+
+            #header {
+                padding: 20px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div class="spinner"></div>
+        Loading particles...
+    </div>
+    
+    <div id="header">
+        <h1>Northern University of Business and Technology Khulna</h1>
+        <p>Saraswati Puja 2025 • 23 January</p>
+    </div>
+    
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const loading = document.getElementById('loading');
+
+        let particles = [];
+        let mouse = { x: null, y: null };
+        let animationId;
+        let scale = 1;
+        let offsetX = 0;
+        let offsetY = 0;
+
+        // Resize canvas to full window
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            calculateScale();
+        }
+
+        // Calculate scale to fit the image within the viewport
+        function calculateScale() {
+            if (particles.length === 0) return;
+            
+            const padding = 40;
+            const scaleX = (canvas.width - padding * 2) / 1200;
+            const scaleY = (canvas.height - padding * 2) / 1717;
+            scale = Math.min(scaleX, scaleY, 1);
+            
+            offsetX = (canvas.width - 1200 * scale) / 2;
+            offsetY = (canvas.height - 1717 * scale) / 2;
+        }
+
+        // Particle class
+        class Particle {
+            constructor(x, y) {
+                this.originalX = x;
+                this.originalY = y;
+                this.x = x;
+                this.y = y;
+                this.vx = 0;
+                this.vy = 0;
+                this.size = 1;
+            }
+
+            draw() {
+                const screenX = this.x * scale + offsetX;
+                const screenY = this.y * scale + offsetY;
+                
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(screenX, screenY, this.size * scale, this.size * scale);
+            }
+
+            update() {
+                const screenX = this.x * scale + offsetX;
+                const screenY = this.y * scale + offsetY;
+
+                // Calculate distance from mouse
+                if (mouse.x !== null && mouse.y !== null) {
+                    const dx = mouse.x - screenX;
+                    const dy = mouse.y - screenY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const maxDistance = 150;
+
+                    if (distance < maxDistance) {
+                        const force = (maxDistance - distance) / maxDistance;
+                        const angle = Math.atan2(dy, dx);
+                        this.vx -= Math.cos(angle) * force * 2;
+                        this.vy -= Math.sin(angle) * force * 2;
+                    }
+                }
+
+                // Apply velocity
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Restore to original position (spring effect)
+                const dx = this.originalX - this.x;
+                const dy = this.originalY - this.y;
+                this.vx += dx * 0.05;
+                this.vy += dy * 0.05;
+
+                // Damping
+                this.vx *= 0.92;
+                this.vy *= 0.92;
+            }
+        }
+
+        // Load JSON data
+        async function loadData() {
+            try {
+                const response = await fetch('s1.json');
+                const data = await response.json();
+                
+                // Sample particles for performance (every nth particle)
+                const samplingRate = data.pixels.length > 50000 ? 4 : 1;
+                
+                data.pixels.forEach((pixel, index) => {
+                    if (index % samplingRate === 0) {
+                        particles.push(new Particle(pixel.x, pixel.y));
+                    }
+                });
+
+                loading.style.display = 'none';
+                
+                calculateScale();
+                animate();
+            } catch (error) {
+                loading.innerHTML = `<div class="spinner"></div>Error loading data: ${error.message}`;
+                console.error('Error loading JSON:', error);
+            }
+        }
+
+        // Animation loop
+        function animate() {
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            particles.forEach(particle => {
+                particle.update();
+                particle.draw();
+            });
+
+            animationId = requestAnimationFrame(animate);
+        }
+
+        // Mouse/touch event handlers
+        function updateMousePosition(e) {
+            const rect = canvas.getBoundingClientRect();
+            if (e.touches && e.touches.length > 0) {
+                mouse.x = e.touches[0].clientX - rect.left;
+                mouse.y = e.touches[0].clientY - rect.top;
+            } else {
+                mouse.x = e.clientX - rect.left;
+                mouse.y = e.clientY - rect.top;
+            }
+        }
+
+        function clearMouse() {
+            mouse.x = null;
+            mouse.y = null;
+        }
+
+        // Event listeners
+        canvas.addEventListener('mousemove', updateMousePosition);
+        canvas.addEventListener('touchmove', updateMousePosition, { passive: true });
+        canvas.addEventListener('mouseleave', clearMouse);
+        canvas.addEventListener('touchend', clearMouse);
+        canvas.addEventListener('touchcancel', clearMouse);
+
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            calculateScale();
+        });
+
+        // Initialize
+        resizeCanvas();
+        loadData();
+    </script>
+</body>
+</html>
